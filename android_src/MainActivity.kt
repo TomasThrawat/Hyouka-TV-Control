@@ -83,7 +83,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         userServiceArgs = Shizuku.UserServiceArgs(
             ComponentName(packageName, TvControlUserService::class.java.name)
-        ).daemon(false).processNameSuffix("tv-control").tag("hyouka-tv-control-service").debuggable(false).version(7)
+        ).daemon(false).processNameSuffix("tv-control").tag("hyouka-tv-control-service").debuggable(false).version(8)
         Shizuku.addRequestPermissionResultListener(permissionResultListener)
     }
 
