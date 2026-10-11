@@ -1,12 +1,12 @@
 package com.hyouka.tvcontrol;
 
 interface ITvControlService {
-    int getBrightnessPercent();
-    void setBrightnessPercent(int percent);
-    int getVolumePercent(int stream);
-    void setVolumePercent(int stream, int percent);
-    int getScreenTimeoutMillis();
-    void setScreenTimeoutMillis(int timeoutMillis);
-    String getDeviceInfo();
-    void destroy();
+    int getBrightnessPercent() = 1;
+    void setBrightnessPercent(int percent) = 2;
+    int getVolumePercent(int stream) = 3;
+    void setVolumePercent(int stream, int percent) = 4;
+    int getScreenTimeoutMillis() = 5;
+    void setScreenTimeoutMillis(int timeoutMillis) = 6;
+    String getDeviceInfo() = 7;
+    void destroy() = 16777114;
 }

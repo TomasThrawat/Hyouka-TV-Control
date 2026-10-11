@@ -62,6 +62,7 @@ const words = <String, Map<String, String>>{
   'failed': {'en':'Control failed','ar':'فشل التحكم'},
   'retry': {'en':'Try again','ar':'حاول تاني'},
   'noData': {'en':'Connect Shizuku to read and change system controls.','ar':'اتصل بـ Shizuku لتغيير إعدادات النظام.'},
+  'serviceUnavailable': {'en':'TV control service is not connected','ar':'خدمة التحكم بالتلفزيون غير متصلة'},
   'startShizuku': {'en':'Start Shizuku, then grant this app permission.','ar':'شغّل Shizuku ثم امنح التطبيق الإذن.'},
 };
 String tr(String key, String language) => words[key]?[language] ?? words[key]?['en'] ?? key;
@@ -209,10 +210,14 @@ class _TvHomeState extends State<TvHome> {
     setState(() { busy = true; error = null; });
     try {
       status = await nativeMap('requestShizukuPermission');
-      if (permitted) {
+      if (permitted && connected) {
         dashboard = await nativeMap('readDashboard');
         status = await nativeMap('checkStatus');
-      } else if (!running) { error = t('startShizuku'); }
+      } else if (!running || !permitted) {
+        error = t('startShizuku');
+      } else {
+        error = status['serviceFailure'] as String? ?? t('serviceUnavailable');
+      }
     } on PlatformException catch (e) { error = e.message ?? e.code; }
     catch (e) { error = e.toString(); }
     finally { if (mounted) setState(() => busy = false); }
@@ -376,8 +381,10 @@ class _TvHomeState extends State<TvHome> {
   );
 
   Widget statusPill() {
-    final color = permitted ? Colors.green : Colors.orange;
-    final label = permitted ? t('connected') : (!running ? t('notConnected') : t('needsPermission'));
+    final color = connected ? Colors.green : Colors.orange;
+    final label = connected
+        ? t('connected')
+        : (!running ? t('notConnected') : (!permitted ? t('needsPermission') : t('serviceUnavailable')));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -398,7 +405,8 @@ class _TvHomeState extends State<TvHome> {
     const SizedBox(width: 16),
     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(t('connect'), style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-      const SizedBox(height: 6), Text(permitted ? t('noData') : t('startShizuku')),
+      const SizedBox(height: 6),
+      Text(!running || !permitted ? t('startShizuku') : t('serviceUnavailable')),
     ])),
     const SizedBox(width: 12),
     FilledButton.icon(

@@ -38,6 +38,7 @@ class MainActivity : FlutterActivity() {
     private val userServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             remoteService = service?.let { ITvControlService.Stub.asInterface(it) }
+            lastServiceFailure = if (remoteService == null) "Shizuku connected but returned an empty TV control binder." else null
             clearBindingTimeout()
             isBinding = false
             val callbacks = pendingServiceCalls.toList()
@@ -53,6 +54,7 @@ class MainActivity : FlutterActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             clearBindingTimeout()
             remoteService = null
+            lastServiceFailure = "Shizuku disconnected the TV control service."
             isBinding = false
             val callbacks = pendingServiceCalls.toList()
             pendingServiceCalls.clear()
@@ -80,7 +82,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         userServiceArgs = Shizuku.UserServiceArgs(
             ComponentName(this, TvControlUserService::class.java)
-        ).daemon(false).processNameSuffix("tv-control").debuggable(false).version(1)
+        ).daemon(false).processNameSuffix("tv-control").tag("hyouka-tv-control-service").debuggable(false).version(2)
         Shizuku.addRequestPermissionResultListener(permissionResultListener)
     }
 
@@ -180,6 +182,7 @@ class MainActivity : FlutterActivity() {
             "running" to running,
             "permissionGranted" to granted,
             "serviceConnected" to (serviceConnected && remoteService != null),
+            "serviceFailure" to lastServiceFailure,
             "uid" to if (uid >= 0) uid.toString() else "—",
             "androidVersion" to android.os.Build.VERSION.RELEASE,
             "api" to android.os.Build.VERSION.SDK_INT,
@@ -227,7 +230,7 @@ class MainActivity : FlutterActivity() {
             Shizuku.bindUserService(userServiceArgs, userServiceConnection)
         } catch (error: Exception) {
             clearBindingTimeout()
-            lastServiceFailure = "Could not bind Shizuku UserService: ${error.message ?: error.javaClass.simpleName}"
+            lastServiceFailure = "Could not bind Shizuku UserService (server ${try { Shizuku.getVersion() } catch (_: Exception) { -1 }}): ${error.message ?: error.javaClass.simpleName}"
             isBinding = false
             val callbacks = pendingServiceCalls.toList()
             pendingServiceCalls.clear()
