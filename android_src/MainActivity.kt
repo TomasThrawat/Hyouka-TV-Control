@@ -6,6 +6,8 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.IBinder
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -24,6 +26,8 @@ class MainActivity : FlutterActivity() {
     }
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var bindingTimeout: Runnable? = null
     private var remoteService: ITvControlService? = null
     private var isBinding = false
     private var pendingPermissionResult: MethodChannel.Result? = null
@@ -33,6 +37,7 @@ class MainActivity : FlutterActivity() {
     private val userServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             remoteService = service?.let { ITvControlService.Stub.asInterface(it) }
+            clearBindingTimeout()
             isBinding = false
             val callbacks = pendingServiceCalls.toList()
             pendingServiceCalls.clear()
@@ -45,8 +50,12 @@ class MainActivity : FlutterActivity() {
             }
         }
         override fun onServiceDisconnected(name: ComponentName?) {
+            clearBindingTimeout()
             remoteService = null
             isBinding = false
+            val callbacks = pendingServiceCalls.toList()
+            pendingServiceCalls.clear()
+            callbacks.forEach { it(null) }
         }
     }
 
@@ -177,6 +186,11 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun clearBindingTimeout() {
+        bindingTimeout?.let(mainHandler::removeCallbacks)
+        bindingTimeout = null
+    }
+
     private fun ensureService(callback: (ITvControlService?) -> Unit) {
         remoteService?.let { callback(it); return }
         val running = try { Shizuku.pingBinder() } catch (_: Exception) { false }
@@ -187,9 +201,20 @@ class MainActivity : FlutterActivity() {
         pendingServiceCalls.add(callback)
         if (isBinding) return
         isBinding = true
+        clearBindingTimeout()
+        bindingTimeout = Runnable {
+            if (isBinding && remoteService == null) {
+                isBinding = false
+                bindingTimeout = null
+                val callbacks = pendingServiceCalls.toList()
+                pendingServiceCalls.clear()
+                callbacks.forEach { it(null) }
+            }
+        }.also { mainHandler.postDelayed(it, 8000L) }
         try {
             Shizuku.bindUserService(userServiceArgs, userServiceConnection)
         } catch (_: Exception) {
+            clearBindingTimeout()
             isBinding = false
             val callbacks = pendingServiceCalls.toList()
             pendingServiceCalls.clear()
@@ -218,6 +243,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        clearBindingTimeout()
         Shizuku.removeRequestPermissionResultListener(permissionResultListener)
         try {
             if (remoteService != null) Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true)
