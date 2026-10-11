@@ -1,0 +1,14 @@
+name: Temporary GitHub Actions Startup Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  startup-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm runner starts
+        run: echo "GitHub Actions runner started successfully."
