@@ -17,6 +17,8 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
+      id-token: write
+      attestations: write
     uses: TomasThrawat/hyouka-flutter-workflows/.github/workflows/flutter-ci.yml@242cb422a52c2ef24fd9074e237e04c0ecdc04fb
     with:
       run-analyze: true
