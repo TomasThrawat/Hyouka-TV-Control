@@ -28,6 +28,7 @@ if "buildFeatures {" not in text:
 gradle_path.write_text(text, encoding="utf-8")
 
 manifest_text = manifest.read_text(encoding="utf-8")
+manifest_text = re.sub(r'android:label="[^"]+"', 'android:label="Hyouka TV Control"', manifest_text, count=1)
 if "moe.shizuku.manager.permission.API_V23" not in manifest_text:
     manifest_text = manifest_text.replace(
         "<application",
