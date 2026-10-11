@@ -28,6 +28,7 @@ class MainActivity : FlutterActivity() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var bindingTimeout: Runnable? = null
+    private var lastServiceFailure: String? = null
     private var remoteService: ITvControlService? = null
     private var isBinding = false
     private var pendingPermissionResult: MethodChannel.Result? = null
@@ -197,7 +198,17 @@ class MainActivity : FlutterActivity() {
         val granted = try {
             running && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         } catch (_: Exception) { false }
-        if (!granted) { callback(null); return }
+        if (!running) {
+            lastServiceFailure = "Shizuku binder is not running."
+            callback(null)
+            return
+        }
+        if (!granted) {
+            lastServiceFailure = "Shizuku permission is not granted to this app."
+            callback(null)
+            return
+        }
+        lastServiceFailure = null
         pendingServiceCalls.add(callback)
         if (isBinding) return
         isBinding = true
@@ -208,13 +219,15 @@ class MainActivity : FlutterActivity() {
                 bindingTimeout = null
                 val callbacks = pendingServiceCalls.toList()
                 pendingServiceCalls.clear()
+                lastServiceFailure = "Shizuku UserService did not connect within 8 seconds. Check Shizuku's app permission and restart the app."
                 callbacks.forEach { it(null) }
             }
         }.also { mainHandler.postDelayed(it, 8000L) }
         try {
             Shizuku.bindUserService(userServiceArgs, userServiceConnection)
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             clearBindingTimeout()
+            lastServiceFailure = "Could not bind Shizuku UserService: ${error.message ?: error.javaClass.simpleName}"
             isBinding = false
             val callbacks = pendingServiceCalls.toList()
             pendingServiceCalls.clear()
@@ -225,8 +238,19 @@ class MainActivity : FlutterActivity() {
     private fun callWithService(result: MethodChannel.Result, operation: (ITvControlService) -> Any?) {
         ensureService { service ->
             if (service == null) {
-                result.error("SHIZUKU_NOT_READY",
-                    "Start Shizuku and grant this app permission before using system controls.", null)
+                val running = try { Shizuku.pingBinder() } catch (_: Exception) { false }
+                val granted = try { running && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED } catch (_: Exception) { false }
+                val code = when {
+                    !running -> "SHIZUKU_NOT_RUNNING"
+                    !granted -> "SHIZUKU_PERMISSION_DENIED"
+                    else -> "SHIZUKU_SERVICE_NOT_CONNECTED"
+                }
+                val message = when {
+                    !running -> "Shizuku binder is not running. Start or restart Shizuku."
+                    !granted -> "Shizuku is running, but this app's Shizuku permission is not granted. Open Shizuku > Apps and enable Hyouka TV Control."
+                    else -> lastServiceFailure ?: "Shizuku is running and permission is granted, but the TV control service did not connect. Restart Shizuku and reopen this app."
+                }
+                result.error(code, message, null)
                 return@ensureService
             }
             ioExecutor.execute {
