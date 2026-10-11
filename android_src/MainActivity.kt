@@ -83,7 +83,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         userServiceArgs = Shizuku.UserServiceArgs(
             ComponentName(packageName, TvControlUserService::class.java.name)
-        ).daemon(false).processNameSuffix("tv-control").tag("hyouka-tv-control-service-v4").debuggable(false).version(4)
+        ).daemon(false).processNameSuffix("tv-control").tag("hyouka-tv-control-service").debuggable(false).version(5)
         Shizuku.addRequestPermissionResultListener(permissionResultListener)
     }
 
@@ -233,10 +233,10 @@ class MainActivity : FlutterActivity() {
                 val uid = try { Shizuku.getUid() } catch (_: Exception) { -1 }
                 try { Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false) } catch (_: Exception) {}
                 serviceBindAttempted = false
-                lastServiceFailure = "Shizuku UserService did not connect within 25 seconds (server API $serverVersion, UID $uid). Permission is granted. The timed-out binding was cleared; this build uses a fresh UserService tag/version."
+                lastServiceFailure = "Shizuku UserService did not connect within 40 seconds (server API $serverVersion, patch ${try { Shizuku.getServerPatchVersion() } catch (_: Exception) { -1 }}, UID $uid). Permission is granted, but the service did not attach. Check Shizuku service-start logs if this persists."
                 callbacks.forEach { it(null) }
             }
-        }.also { mainHandler.postDelayed(it, 25000L) }
+        }.also { mainHandler.postDelayed(it, 40000L) }
         try {
             serviceBindAttempted = true
             Shizuku.bindUserService(userServiceArgs, userServiceConnection)

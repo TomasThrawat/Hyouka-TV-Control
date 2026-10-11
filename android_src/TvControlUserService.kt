@@ -1,11 +1,12 @@
 package com.hyouka.hyouka_tv_control
 
+import android.content.Context
 import android.os.Build
 import android.os.Process
 import com.hyouka.tvcontrol.ITvControlService
 import java.io.IOException
 
-class TvControlUserService : ITvControlService.Stub() {
+class TvControlUserService(@Suppress("UNUSED_PARAMETER") context: Context? = null) : ITvControlService.Stub() {
     override fun getBrightnessPercent(): Int {
         val raw = runShell("settings get system screen_brightness").toIntOrNull() ?: 128
         return ((raw.coerceIn(1, 255) * 100.0) / 255.0).toInt().coerceIn(1, 100)
