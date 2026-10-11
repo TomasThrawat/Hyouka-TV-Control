@@ -453,7 +453,7 @@ class _TvHomeState extends State<TvHome> {
       const SizedBox(width: 12),
       DropdownButton<int>(
         value: selected,
-        items: List.generate(values.length, (i) => DropdownMenuItem<int>(value: values[i], child: Text(t(keys[i]))),
+        items: List.generate(values.length, (i) => DropdownMenuItem<int>(value: values[i], child: Text(t(keys[i])))),
         onChanged: busy ? null : (v) { if (v != null) setTimeout(v); },
       ),
     ]));
