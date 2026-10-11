@@ -31,6 +31,7 @@ class MainActivity : FlutterActivity() {
     private var lastServiceFailure: String? = null
     private var remoteService: ITvControlService? = null
     private var isBinding = false
+    private var serviceBindAttempted = false
     private var pendingPermissionResult: MethodChannel.Result? = null
     private val pendingServiceCalls = mutableListOf<(ITvControlService?) -> Unit>()
     private lateinit var userServiceArgs: Shizuku.UserServiceArgs
@@ -81,8 +82,8 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         userServiceArgs = Shizuku.UserServiceArgs(
-            ComponentName(this, TvControlUserService::class.java)
-        ).daemon(true).processNameSuffix("tv-control").tag("hyouka-tv-control-service").debuggable(true).version(3)
+            ComponentName(packageName, TvControlUserService::class.java.name)
+        ).daemon(false).processNameSuffix("tv-control").tag("hyouka-tv-control-service-v4").debuggable(BuildConfig.DEBUG).version(4)
         Shizuku.addRequestPermissionResultListener(permissionResultListener)
     }
 
@@ -211,6 +212,12 @@ class MainActivity : FlutterActivity() {
             callback(null)
             return
         }
+        val serverVersion = try { Shizuku.getVersion() } catch (_: Exception) { -1 }
+        if (serverVersion >= 0 && serverVersion < 10) {
+            lastServiceFailure = "Shizuku server API $serverVersion does not support UserService; API 10 or newer is required."
+            callback(null)
+            return
+        }
         lastServiceFailure = null
         pendingServiceCalls.add(callback)
         if (isBinding) return
@@ -223,15 +230,20 @@ class MainActivity : FlutterActivity() {
                 val callbacks = pendingServiceCalls.toList()
                 pendingServiceCalls.clear()
                 val serverVersion = try { Shizuku.getVersion() } catch (_: Exception) { -1 }
-                val serviceState = try { Shizuku.peekUserService(userServiceArgs, userServiceConnection) } catch (error: Exception) { -1000 }
-                lastServiceFailure = "Shizuku UserService did not connect within 25 seconds (server API $serverVersion, UID ${try { Shizuku.getUid() } catch (_: Exception) { -1 }}, service state $serviceState). Permission is already granted; check Shizuku server logs for UserService launch errors."
+                val uid = try { Shizuku.getUid() } catch (_: Exception) { -1 }
+                try { Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false) } catch (_: Exception) {}
+                serviceBindAttempted = false
+                lastServiceFailure = "Shizuku UserService did not connect within 25 seconds (server API $serverVersion, UID $uid). Permission is granted. The timed-out binding was cleared; this build uses a fresh UserService tag/version."
                 callbacks.forEach { it(null) }
             }
         }.also { mainHandler.postDelayed(it, 25000L) }
         try {
+            serviceBindAttempted = true
             Shizuku.bindUserService(userServiceArgs, userServiceConnection)
         } catch (error: Exception) {
             clearBindingTimeout()
+            try { Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false) } catch (_: Exception) {}
+            serviceBindAttempted = false
             lastServiceFailure = "Could not bind Shizuku UserService (server ${try { Shizuku.getVersion() } catch (_: Exception) { -1 }}): ${error.message ?: error.javaClass.simpleName}"
             isBinding = false
             val callbacks = pendingServiceCalls.toList()
@@ -275,7 +287,7 @@ class MainActivity : FlutterActivity() {
         clearBindingTimeout()
         Shizuku.removeRequestPermissionResultListener(permissionResultListener)
         try {
-            if (remoteService != null) Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true)
+            if (serviceBindAttempted) Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true)
         } catch (_: Exception) {}
         ioExecutor.shutdownNow()
         super.onDestroy()
