@@ -15,9 +15,9 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -42,7 +42,7 @@ jobs:
         run: flutter test --reporter expanded
       - name: Build ARMv7 release APK
         run: flutter build apk --release --target-platform android-arm
-      - name: Verify native ABI
+      - name: Verify native ABI and package
         run: |
           APK=build/app/outputs/flutter-apk/app-release.apk
           test -s "$APK"
