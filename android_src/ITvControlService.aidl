@@ -8,5 +8,5 @@ interface ITvControlService {
     int getScreenTimeoutMillis();
     void setScreenTimeoutMillis(int timeoutMillis);
     String getDeviceInfo();
-    void destroy() = 16777114;
+    void destroy();
 }
