@@ -1,4 +1,4 @@
-name: Android TV APK
+name: Hyouka TV Control Flutter CI
 
 on:
   push:
@@ -7,56 +7,32 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
+  pull-requests: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Flutter stable
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - name: Create Android scaffold and configure Shizuku bridge
-        run: |
-          rm -rf /tmp/tv-scaffold
-          flutter create --platforms=android --org com.hyouka --project-name hyouka_tv_control --android-language kotlin /tmp/tv-scaffold
-          cp -a /tmp/tv-scaffold/android ./android
-          python3 scripts/configure_android.py
-      - name: Resolve packages
-        run: flutter pub get
-      - name: Format
-        run: dart format lib test
-      - name: Analyze
-        run: flutter analyze
-      - name: Test
-        run: flutter test --reporter expanded
-      - name: Build ARMv7 release APK
-        run: flutter build apk --release --target-platform android-arm
-      - name: Verify native ABI and package
-        run: |
-          APK=build/app/outputs/flutter-apk/app-release.apk
-          test -s "$APK"
-          unzip -l "$APK" | tee /tmp/apk-files.txt
-          grep -q 'lib/armeabi-v7a/' /tmp/apk-files.txt
-          if grep -qE 'lib/(arm64-v8a|x86|x86_64)/' /tmp/apk-files.txt; then
-            echo "Unexpected non-ARMv7 native library was packaged."
-            exit 1
-          fi
-          cp "$APK" build/app/outputs/flutter-apk/hyouka-tv-control-armv7.apk
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: hyouka-tv-control-armv7
-          path: build/app/outputs/flutter-apk/hyouka-tv-control-armv7.apk
-          if-no-files-found: error
-          retention-days: 14
+  flutter-ci:
+    uses: TomasThrawat/hyouka-flutter-workflows/.github/workflows/flutter-ci.yml@242cb422a52c2ef24fd9074e237e04c0ecdc04fb
+    with:
+      run-analyze: true
+      run-tests: true
+      check-format: false
+      build-apk: true
+      target-platform: android-arm
+      generate-android: true
+      android-project-name: hyouka_tv_control
+      android-organization: com.hyouka
+      android-setup-script: scripts/configure_android.py
+      run-emulator-tests: false
+      run-security-audit: true
+      fail-on-security-findings: false
+      artifact-name: hyouka-tv-control-armv7
+      enable-targeted-pr-tests: false
+      run-apk-smoke-test: false
+      min-coverage-percent: 0
+      max-apk-size-mb: 0
+      max-apk-entry-size-mb: 0
+      forbid-permissions: ''
+      fail-on-new-warnings: false
+      generate-artifact-attestation: false
