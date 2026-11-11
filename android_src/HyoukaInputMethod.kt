@@ -5,10 +5,11 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 
 /**
- * Headless input method used only as a bridge for text committed from the
- * paired phone page. The focused TV editor remains the text target.
+ * Hidden input method used by the phone companion. Text is composed into the
+ * currently focused TV editor while the user types on the phone.
  */
 class HyoukaInputMethod : InputMethodService() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -31,7 +32,6 @@ class HyoukaInputMethod : InputMethodService() {
         super.onFinishInput()
     }
 
-    // The phone supplies the keys, so do not cover the TV screen with another keyboard.
     override fun onEvaluateInputViewShown(): Boolean {
         super.onEvaluateInputViewShown()
         return false
@@ -49,24 +49,26 @@ class HyoukaInputMethod : InputMethodService() {
         @Volatile
         private var activeInstance: HyoukaInputMethod? = null
 
-        fun commitRemoteText(text: String, callback: (Boolean) -> Unit) {
+        fun setRemoteComposingText(text: String, callback: (Boolean) -> Unit) =
+            postToInputConnection(callback) { connection -> connection.setComposingText(text, 1) }
+
+        fun finishRemoteComposition(callback: (Boolean) -> Unit) =
+            postToInputConnection(callback) { connection -> connection.finishComposingText() }
+
+        private fun postToInputConnection(callback: (Boolean) -> Unit, operation: (InputConnection) -> Boolean) {
             val instance = activeInstance
             if (instance == null) {
                 callback(false)
                 return
             }
-
             instance.mainHandler.post {
-                val committed = try {
-                    if (!instance.hasActiveEditor) {
-                        false
-                    } else {
-                        instance.currentInputConnection?.commitText(text, 1) == true
-                    }
+                val accepted = try {
+                    val connection = instance.currentInputConnection
+                    if (!instance.hasActiveEditor || connection == null) false else operation(connection)
                 } catch (_: Exception) {
                     false
                 }
-                callback(committed)
+                callback(accepted)
             }
         }
     }

@@ -4,12 +4,25 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.IBinder
 import android.provider.Settings
+import android.app.UiModeManager
+import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.URL
+import java.nio.charset.StandardCharsets
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import android.view.inputmethod.InputMethodManager
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
@@ -25,10 +38,17 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "hyouka.tvcontrol/system"
         private const val REQUEST_CODE = 7104
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+        private const val PHONE_PREFS = "hyouka_phone_remote"
+        private const val REMOTE_PORT = 8765
     }
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var nsdDiscoveryListener: NsdManager.DiscoveryListener? = null
+    private var discoveryTimeout: Runnable? = null
+    private var discoveryResult: MethodChannel.Result? = null
+    private val discoveredServices = ConcurrentHashMap<String, Map<String, Any>>()
+    private var multicastLock: WifiManager.MulticastLock? = null
     private var bindingTimeout: Runnable? = null
     private var lastServiceFailure: String? = null
     private var remoteService: ITvControlService? = null
@@ -98,7 +118,11 @@ class MainActivity : FlutterActivity() {
     private fun handleCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "checkStatus" -> result.success(statusSnapshot())
-            "startRemoteKeyboard" -> {
+            "isTelevision" -> {
+                val uiMode = getSystemService(UI_MODE_SERVICE) as UiModeManager
+                result.success(uiMode.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION)
+            }
+            "ensureRemoteKeyboardServer", "startRemoteKeyboard" -> {
                 try {
                     RemoteKeyboardServerService.prepareSession()
                     val intent = Intent(this, RemoteKeyboardServerService::class.java)
@@ -109,13 +133,22 @@ class MainActivity : FlutterActivity() {
                 }
             }
             "stopRemoteKeyboard" -> {
-                RemoteKeyboardServerService.clearSession()
                 stopService(Intent(this, RemoteKeyboardServerService::class.java))
                 result.success(remoteKeyboardStatus())
             }
             "remoteKeyboardStatus" -> result.success(remoteKeyboardStatus())
             "showKeyboardPicker" -> {
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+                result.success(true)
+            }
+            "discoverRemoteTvs" -> discoverRemoteTvs(result)
+            "phoneRemoteStatus" -> result.success(phoneRemoteStatus())
+            "pairRemoteTv" -> pairRemoteTv(call, result)
+            "updateRemoteTvAddress" -> updateRemoteTvAddress(call, result)
+            "sendRemoteComposition" -> sendPairedRequest("/compose", call, result)
+            "finishRemoteComposition" -> sendPairedRequest("/finish", call, result)
+            "forgetRemoteTv" -> {
+                getSharedPreferences(PHONE_PREFS, MODE_PRIVATE).edit().clear().apply()
                 result.success(true)
             }
             "requestShizukuPermission" -> requestShizukuPermission(result)
@@ -171,6 +204,216 @@ class MainActivity : FlutterActivity() {
             }
             else -> result.notImplemented()
         }
+    }
+
+    private fun phoneRemoteStatus(): Map<String, Any?> {
+        val prefs = getSharedPreferences(PHONE_PREFS, MODE_PRIVATE)
+        val token = prefs.getString("token", null)
+        return mapOf(
+            "paired" to !token.isNullOrBlank(),
+            "host" to prefs.getString("host", ""),
+            "port" to prefs.getInt("port", REMOTE_PORT),
+            "tvId" to prefs.getString("tvId", ""),
+            "name" to prefs.getString("name", "Hyouka TV")
+        )
+    }
+
+    private fun phoneDeviceId(): String {
+        val prefs = getSharedPreferences(PHONE_PREFS, MODE_PRIVATE)
+        val existing = prefs.getString("phoneId", null)
+        if (!existing.isNullOrBlank()) return existing
+        val created = UUID.randomUUID().toString()
+        prefs.edit().putString("phoneId", created).apply()
+        return created
+    }
+
+    private fun pairRemoteTv(call: MethodCall, result: MethodChannel.Result) {
+        val host = call.argument<String>("host") ?: ""
+        val port = call.argument<Int>("port") ?: REMOTE_PORT
+        val pin = call.argument<String>("pin") ?: ""
+        val tvId = call.argument<String>("tvId") ?: ""
+        val name = call.argument<String>("name") ?: "Hyouka TV"
+        if (host.isBlank() || pin.length != 6 || tvId.isBlank()) {
+            result.error("INVALID_PAIRING_DATA", "Choose a TV and enter the six-digit code shown on it.", null)
+            return
+        }
+        ioExecutor.execute {
+            try {
+                val phoneId = phoneDeviceId()
+                val response = localRemoteRequest(host, port, "/pair", JSONObject()
+                    .put("pin", pin)
+                    .put("deviceId", phoneId))
+                val token = response.getString("token")
+                val actualTvId = response.optString("deviceId", tvId)
+                val actualName = response.optString("name", name)
+                getSharedPreferences(PHONE_PREFS, MODE_PRIVATE).edit()
+                    .putString("phoneId", phoneId)
+                    .putString("token", token)
+                    .putString("host", host)
+                    .putInt("port", port)
+                    .putString("tvId", actualTvId)
+                    .putString("name", actualName)
+                    .apply()
+                runOnUiThread { result.success(phoneRemoteStatus()) }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    result.error("TV_PAIRING_FAILED", error.message ?: "Could not pair with this TV.", null)
+                }
+            }
+        }
+    }
+
+    private fun updateRemoteTvAddress(call: MethodCall, result: MethodChannel.Result) {
+        val host = call.argument<String>("host") ?: ""
+        val port = call.argument<Int>("port") ?: REMOTE_PORT
+        val tvId = call.argument<String>("tvId") ?: ""
+        val prefs = getSharedPreferences(PHONE_PREFS, MODE_PRIVATE)
+        if (prefs.getString("tvId", null) != tvId || host.isBlank()) {
+            result.success(false)
+            return
+        }
+        prefs.edit().putString("host", host).putInt("port", port).apply()
+        result.success(true)
+    }
+
+    private fun sendPairedRequest(path: String, call: MethodCall, result: MethodChannel.Result) {
+        val prefs = getSharedPreferences(PHONE_PREFS, MODE_PRIVATE)
+        val host = prefs.getString("host", null)
+        val token = prefs.getString("token", null)
+        val tvId = prefs.getString("tvId", null)
+        val phoneId = prefs.getString("phoneId", null)
+        val port = prefs.getInt("port", REMOTE_PORT)
+        if (host.isNullOrBlank() || token.isNullOrBlank() || tvId.isNullOrBlank() || phoneId.isNullOrBlank()) {
+            result.error("TV_NOT_PAIRED", "Pair the phone with your TV once first.", null)
+            return
+        }
+        val payload = JSONObject()
+            .put("deviceId", phoneId)
+            .put("token", token)
+        if (path == "/compose") {
+            payload.put("text", call.argument<String>("text") ?: "")
+        }
+        ioExecutor.execute {
+            try {
+                localRemoteRequest(host, port, path, payload)
+                runOnUiThread { result.success(true) }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    result.error("TV_TEXT_SEND_FAILED", error.message ?: "Could not send text to the TV.", null)
+                }
+            }
+        }
+    }
+
+    private fun localRemoteRequest(host: String, port: Int, path: String, payload: JSONObject): JSONObject {
+        val address = InetAddress.getByName(host)
+        if (!address.isSiteLocalAddress && !address.isLinkLocalAddress) {
+            throw IOException("The selected TV is not on a private local network.")
+        }
+        val formattedHost = if (host.contains(":")) "[$host]" else host
+        val connection = URL("http://$formattedHost:$port$path").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 2500
+            connection.readTimeout = 2500
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            val bytes = payload.toString().toByteArray(StandardCharsets.UTF_8)
+            connection.setFixedLengthStreamingMode(bytes.size)
+            connection.outputStream.use { it.write(bytes) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() } ?: "{}"
+            val response = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+            if (code !in 200..299) {
+                throw IOException(response.optString("error").ifBlank { "TV returned HTTP $code." })
+            }
+            return response
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun discoverRemoteTvs(result: MethodChannel.Result) {
+        stopRemoteDiscovery()
+        discoveredServices.clear()
+        val manager = getSystemService(NSD_SERVICE) as NsdManager
+        val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+        try {
+            multicastLock = wifi.createMulticastLock("hyouka-tv-discovery").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            val listener = object : NsdManager.DiscoveryListener {
+                override fun onDiscoveryStarted(serviceType: String) {}
+
+                override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                    if (serviceInfo.serviceType.trimEnd('.') != RemoteKeyboardServerService.SERVICE_TYPE.trimEnd('.')) return
+                    try {
+                        manager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                            override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {}
+                            override fun onServiceResolved(info: NsdServiceInfo) {
+                                val host = info.host?.hostAddress ?: return
+                                val deviceId = info.attributes["id"]?.let { String(it, StandardCharsets.UTF_8) } ?: return
+                                discoveredServices[deviceId] = mapOf(
+                                    "name" to info.serviceName,
+                                    "host" to host,
+                                    "port" to info.port,
+                                    "tvId" to deviceId
+                                )
+                            }
+                        })
+                    } catch (_: Exception) {}
+                }
+
+                override fun onServiceLost(serviceInfo: NsdServiceInfo) {}
+                override fun onDiscoveryStopped(serviceType: String) {}
+                override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    finishRemoteDiscovery(result, "TV discovery could not start ($errorCode).")
+                }
+                override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+            }
+            nsdDiscoveryListener = listener
+            discoveryResult = result
+            manager.discoverServices(RemoteKeyboardServerService.SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
+            discoveryTimeout = Runnable { finishRemoteDiscovery(result, null) }
+                .also { mainHandler.postDelayed(it, 3000L) }
+        } catch (error: Exception) {
+            stopRemoteDiscovery()
+            result.error("TV_DISCOVERY_FAILED", error.message ?: "Could not search for TVs.", null)
+        }
+    }
+
+    private fun finishRemoteDiscovery(result: MethodChannel.Result, failure: String?) {
+        if (discoveryResult !== result) return
+        discoveryTimeout?.let(mainHandler::removeCallbacks)
+        discoveryTimeout = null
+        val listener = nsdDiscoveryListener
+        nsdDiscoveryListener = null
+        try {
+            if (listener != null) (getSystemService(NSD_SERVICE) as NsdManager).stopServiceDiscovery(listener)
+        } catch (_: Exception) {}
+        multicastLock?.let { try { if (it.isHeld) it.release() } catch (_: Exception) {} }
+        multicastLock = null
+        discoveryResult = null
+        if (failure != null) {
+            result.error("TV_DISCOVERY_FAILED", failure, null)
+        } else {
+            result.success(discoveredServices.values.toList())
+        }
+    }
+
+    private fun stopRemoteDiscovery() {
+        discoveryTimeout?.let(mainHandler::removeCallbacks)
+        discoveryTimeout = null
+        val listener = nsdDiscoveryListener
+        nsdDiscoveryListener = null
+        try {
+            if (listener != null) (getSystemService(NSD_SERVICE) as NsdManager).stopServiceDiscovery(listener)
+        } catch (_: Exception) {}
+        multicastLock?.let { try { if (it.isHeld) it.release() } catch (_: Exception) {} }
+        multicastLock = null
+        discoveryResult = null
     }
 
     private fun remoteKeyboardStatus(): Map<String, Any?> {
@@ -320,6 +563,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        stopRemoteDiscovery()
         clearBindingTimeout()
         Shizuku.removeRequestPermissionResultListener(permissionResultListener)
         try {

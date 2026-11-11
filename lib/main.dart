@@ -15,9 +15,29 @@ const words = <String, Map<String, String>>{
   'home': {'en':'Controls','ar':'التحكم'},
   'settings': {'en':'Settings','ar':'الإعدادات'},
   'device': {'en':'TV status','ar':'حالة التلفزيون'},
+  'phoneRemote': {'en':'Hyouka Remote','ar':'ريموت Hyouka'},
+  'phoneRemoteHint': {'en':'Connect once, then use the keyboard icon whenever a TV text field is open.','ar':'اربط التلفزيون مرة واحدة، وبعدها استخدم أيقونة الكيبورد وقت ما تفتح خانة كتابة على التلفزيون.'},
+  'findTv': {'en':'Find my TV','ar':'البحث عن التلفزيون'},
+  'searchingTvs': {'en':'Looking for TVs on this Wi-Fi…','ar':'بدور على تلفزيونات على نفس شبكة Wi-Fi…'},
+  'noTvsFound': {'en':'No Hyouka TV found. Make sure the TV app is open and both devices use the same Wi-Fi.','ar':'مش لاقي تلفزيون Hyouka. افتح التطبيق على التلفزيون واتأكد إن الجهازين على نفس شبكة Wi-Fi.'},
+  'pairTv': {'en':'Pair TV once','ar':'ربط التلفزيون مرة واحدة'},
+  'pairTvPrompt': {'en':'Enter the six-digit code shown on the TV. You only need to do this once.','ar':'اكتب الرمز المكوّن من 6 أرقام الظاهر على التلفزيون. هتعمل الخطوة دي مرة واحدة بس.'},
+  'pairing': {'en':'Pairing…','ar':'جاري الربط…'},
+  'pairedWith': {'en':'Connected to','ar':'متصل بـ'},
+  'notPaired': {'en':'No TV paired yet','ar':'لسه مفيش تلفزيون مربوط'},
+  'keyboardAction': {'en':'Keyboard','ar':'كيبورد'},
+  'typeOnTv': {'en':'Type on TV','ar':'اكتب على التلفزيون'},
+  'typeHint': {'en':'Type here. Text appears in the focused TV text field as you type.','ar':'اكتب هنا، والنص هيظهر في خانة الكتابة المحددة على التلفزيون أثناء الكتابة.'},
+  'done': {'en':'Done','ar':'تم'},
+  'cancel': {'en':'Cancel','ar':'إلغاء'},
+  'refreshDevices': {'en':'Find TVs','ar':'بحث عن تلفزيون'},
+  'forgetTv': {'en':'Disconnect TV','ar':'فصل التلفزيون'},
+  'keyboardSetupTv': {'en':'On the TV, select Hyouka Remote Keyboard once in the keyboard picker.','ar':'على التلفزيون، اختار Hyouka Remote Keyboard مرة واحدة من قائمة لوحات المفاتيح.'},
+  'tvPairCodeHint': {'en':'Enter this code once in Hyouka Remote on your phone. After pairing, use the keyboard icon on the phone.','ar':'اكتب الرمز ده مرة واحدة في تطبيق Hyouka Remote على الموبايل. بعد الربط استخدم أيقونة الكيبورد على الموبايل.'},
+  'textFieldNeeded': {'en':'Open a text field on the TV first.','ar':'افتح خانة كتابة على التلفزيون الأول.'},
   'keyboard': {'en':'Phone keyboard','ar':'كيبورد الموبايل'},
   'keyboardTitle': {'en':'Type on your TV from your phone','ar':'اكتب على التلفزيون من موبايلك'},
-  'keyboardSubtitle': {'en':'Pair your phone with this TV, then use your phone keyboard to send text to the focused field.','ar':'اربط موبايلك بالتلفزيون واكتب من كيبورد الموبايل في خانة الكتابة المفتوحة على التلفزيون.'},
+  'keyboardSubtitle': {'en':'Pair once in the phone app. After that, tap its keyboard icon whenever a TV text field is open.','ar':'اربط من تطبيق الموبايل مرة واحدة. بعد كده اضغط أيقونة الكيبورد وقت ما تفتح خانة كتابة على التلفزيون.'},
   'chooseKeyboard': {'en':'Choose Hyouka keyboard','ar':'اختيار كيبورد Hyouka'},
   'keyboardEnableHint': {'en':'Select Hyouka Remote Keyboard in the system keyboard picker.','ar':'اختار Hyouka Remote Keyboard من قائمة لوحات المفاتيح.'},
   'keyboardPickHint': {'en':'Choose Hyouka Remote Keyboard in the picker to receive text.','ar':'اختار Hyouka Remote Keyboard من القائمة لاستقبال النص.'},
@@ -93,11 +113,13 @@ class HyoukaTvControlApp extends StatefulWidget {
 class _HyoukaTvControlAppState extends State<HyoukaTvControlApp> {
   String language = 'en';
   String themeKey = 'pureBlack';
+  bool? isTelevision;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _detectDeviceMode();
   }
 
   Future<void> _load() async {
@@ -111,6 +133,15 @@ class _HyoukaTvControlAppState extends State<HyoukaTvControlApp> {
     } catch (_) {}
   }
 
+  Future<void> _detectDeviceMode() async {
+    try {
+      final result = await native.invokeMethod<bool>('isTelevision');
+      if (mounted) setState(() => isTelevision = result ?? false);
+    } catch (_) {
+      if (mounted) setState(() => isTelevision = false);
+    }
+  }
+
   Future<void> _save() async {
     try { await nativeVoid('savePreferences', {'language': language, 'theme': themeKey}); } catch (_) {}
   }
@@ -122,14 +153,377 @@ class _HyoukaTvControlAppState extends State<HyoukaTvControlApp> {
     theme: makeTheme(themeKey),
     home: Directionality(
       textDirection: language == 'ar' ? TextDirection.rtl : TextDirection.ltr,
-      child: TvHome(
-        language: language,
-        themeKey: themeKey,
-        onLanguage: (value) { setState(() => language = value); _save(); },
-        onTheme: (value) { setState(() => themeKey = value); _save(); },
-      ),
+      child: isTelevision == null
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : isTelevision!
+              ? TvHome(
+                  language: language,
+                  themeKey: themeKey,
+                  onLanguage: (value) { setState(() => language = value); _save(); },
+                  onTheme: (value) { setState(() => themeKey = value); _save(); },
+                )
+              : PhoneRemoteHome(language: language, themeKey: themeKey),
     ),
   );
+}
+
+
+class PhoneRemoteHome extends StatefulWidget {
+  const PhoneRemoteHome({required this.language, required this.themeKey, super.key});
+  final String language;
+  final String themeKey;
+
+  @override
+  State<PhoneRemoteHome> createState() => _PhoneRemoteHomeState();
+}
+
+class _PhoneRemoteHomeState extends State<PhoneRemoteHome> {
+  Map<String, dynamic> paired = {};
+  List<Map<String, dynamic>> devices = [];
+  bool busy = true;
+  bool searching = false;
+  String? error;
+
+  String t(String key) => tr(key, widget.language);
+  bool get isPaired => paired['paired'] == true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRemote();
+  }
+
+  Future<void> _loadRemote() async {
+    try {
+      paired = await nativeMap('phoneRemoteStatus');
+      if (mounted) setState(() => busy = false);
+      await _discover();
+    } catch (e) {
+      if (mounted) setState(() { busy = false; error = e.toString(); });
+    }
+  }
+
+  Future<void> _discover() async {
+    if (mounted) setState(() { searching = true; error = null; });
+    try {
+      final raw = await native.invokeListMethod<dynamic>('discoverRemoteTvs') ?? [];
+      final found = raw
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (!mounted) return;
+      setState(() => devices = found);
+
+      if (isPaired) {
+        final savedTvId = paired['tvId']?.toString();
+        for (final device in found) {
+          if (device['tvId']?.toString() == savedTvId) {
+            await native.invokeMethod<bool>('updateRemoteTvAddress', {
+              'host': device['host'],
+              'port': device['port'],
+              'tvId': device['tvId'],
+            });
+            paired = await nativeMap('phoneRemoteStatus');
+            break;
+          }
+        }
+      }
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => error = e.message ?? e.code);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
+  }
+
+  Future<void> _pair(Map<String, dynamic> device) async {
+    final pinController = TextEditingController();
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(t('pairTv')),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(t('pairTvPrompt')),
+          const SizedBox(height: 14),
+          TextField(
+            controller: pinController,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            decoration: InputDecoration(
+              hintText: '000000',
+              counterText: '',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(t('cancel'))),
+          FilledButton(
+            onPressed: () {
+              final value = pinController.text.trim();
+              if (RegExp(r'^d{6}$').hasMatch(value)) Navigator.pop(dialogContext, value);
+            },
+            child: Text(t('pairTv')),
+          ),
+        ],
+      ),
+    );
+    pinController.dispose();
+    if (pin == null) return;
+
+    setState(() { busy = true; error = null; });
+    try {
+      paired = await nativeMap('pairRemoteTv', {
+        'host': device['host'],
+        'port': device['port'],
+        'tvId': device['tvId'],
+        'name': device['name'],
+        'pin': pin,
+      });
+      if (!mounted) return;
+      setState(() { busy = false; });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('pairedWith') + ' ' + (paired['name']?.toString() ?? t('app')))));
+    } on PlatformException catch (e) {
+      if (mounted) setState(() { busy = false; error = e.message ?? e.code; });
+    } catch (e) {
+      if (mounted) setState(() { busy = false; error = e.toString(); });
+    }
+  }
+
+  Future<void> _forgetTv() async {
+    await native.invokeMethod<bool>('forgetRemoteTv');
+    if (!mounted) return;
+    setState(() { paired = {'paired': false}; });
+    await _discover();
+  }
+
+  Future<void> _openKeyboard() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) => PhoneKeyboardSheet(language: widget.language),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t('phoneRemote'), style: const TextStyle(fontWeight: FontWeight.w800)),
+        actions: [
+          IconButton(
+            tooltip: t('refreshDevices'),
+            onPressed: searching ? null : _discover,
+            icon: searching
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.refresh_rounded),
+          ),
+          if (isPaired)
+            IconButton(
+              tooltip: t('forgetTv'),
+              onPressed: _forgetTv,
+              icon: const Icon(Icons.link_off_rounded),
+            ),
+        ],
+      ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: isPaired
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 88,
+                          height: 88,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: Icon(Icons.tv_rounded, size: 46, color: theme.colorScheme.onPrimaryContainer),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(t('pairedWith'), style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                        Text(
+                          paired['name']?.toString() ?? 'Hyouka TV',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(t('phoneRemoteHint'), textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
+                        const SizedBox(height: 28),
+                        FilledButton.icon(
+                          onPressed: _openKeyboard,
+                          icon: const Icon(Icons.keyboard_rounded, size: 24),
+                          label: Text(t('keyboardAction')),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(60),
+                            textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 18),
+                        Icon(Icons.tv_rounded, size: 56, color: theme.colorScheme.primary),
+                        const SizedBox(height: 12),
+                        Text(t('notPaired'), textAlign: TextAlign.center, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 8),
+                        Text(t('phoneRemoteHint'), textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
+                        const SizedBox(height: 24),
+                        if (error != null) errorPanel(context, error!),
+                        if (searching || busy)
+                          const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else if (devices.isEmpty)
+                          Text(t('noTvsFound'), textAlign: TextAlign.center, style: theme.textTheme.bodyMedium)
+                        else ...[
+                          Text(t('findTv'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 10),
+                          ...devices.map((device) => Card(
+                            child: ListTile(
+                              leading: const Icon(Icons.tv_rounded),
+                              title: Text(device['name']?.toString() ?? 'Hyouka TV'),
+                              subtitle: Text(t('pairTvPrompt')),
+                              trailing: const Icon(Icons.chevron_right_rounded),
+                              onTap: () => _pair(device),
+                            ),
+                          )),
+                        ],
+                        const Spacer(),
+                        OutlinedButton.icon(
+                          onPressed: searching ? null : _discover,
+                          icon: const Icon(Icons.search_rounded),
+                          label: Text(t('findTv')),
+                          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(54)),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget errorPanel(BuildContext context, String message) => Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.25),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Text(message, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+  );
+}
+
+class PhoneKeyboardSheet extends StatefulWidget {
+  const PhoneKeyboardSheet({required this.language, super.key});
+  final String language;
+
+  @override
+  State<PhoneKeyboardSheet> createState() => _PhoneKeyboardSheetState();
+}
+
+class _PhoneKeyboardSheetState extends State<PhoneKeyboardSheet> {
+  final TextEditingController controller = TextEditingController();
+  Timer? sendTimer;
+  String? error;
+  bool finishing = false;
+
+  String t(String key) => tr(key, widget.language);
+
+  void _queueText(String value) {
+    sendTimer?.cancel();
+    sendTimer = Timer(const Duration(milliseconds: 70), () async {
+      try {
+        await native.invokeMethod<bool>('sendRemoteComposition', {'text': value});
+        if (mounted) setState(() => error = null);
+      } on PlatformException catch (e) {
+        if (mounted) setState(() => error = e.message ?? e.code);
+      } catch (e) {
+        if (mounted) setState(() => error = e.toString());
+      }
+    });
+  }
+
+  Future<void> _finish() async {
+    if (finishing) return;
+    finishing = true;
+    sendTimer?.cancel();
+    try {
+      await native.invokeMethod<bool>('finishRemoteComposition');
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  void dispose() {
+    sendTimer?.cancel();
+    unawaited(native.invokeMethod<bool>('finishRemoteComposition').then<void>((_) {}));
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset > 0 ? 8 : 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            Expanded(child: Text(t('typeOnTv'), style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
+            IconButton(onPressed: _finish, icon: const Icon(Icons.close_rounded)),
+          ]),
+          const SizedBox(height: 8),
+          Text(t('typeHint'), style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 3,
+            textInputAction: TextInputAction.done,
+            onChanged: _queueText,
+            onSubmitted: (_) => _finish(),
+            decoration: InputDecoration(
+              hintText: t('typeOnTv'),
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(onPressed: _finish, icon: const Icon(Icons.send_rounded)),
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton(onPressed: _finish, child: Text(t('done'))),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 ThemeData makeTheme(String key) {
@@ -199,7 +593,7 @@ class _TvHomeState extends State<TvHome> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) { refresh(); refreshKeyboardStatus(); });
+    WidgetsBinding.instance.addPostFrameCallback((_) { refresh(); _ensureRemoteKeyboardServer(); });
   }
 
   @override
@@ -210,6 +604,18 @@ class _TvHomeState extends State<TvHome> {
     alarmTimer?.cancel();
     keyboardPollTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _ensureRemoteKeyboardServer() async {
+    try {
+      keyboardStatus = await nativeMap('ensureRemoteKeyboardServer');
+      if (mounted) setState(() {});
+      _pollKeyboardStatus();
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.message ?? e.code});
+    } catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.toString()});
+    }
   }
 
   Future<void> refreshKeyboardStatus() async {
@@ -241,36 +647,6 @@ class _TvHomeState extends State<TvHome> {
     });
   }
 
-  Future<void> startPhoneKeyboard() async {
-    setState(() { keyboardBusy = true; });
-    try {
-      keyboardStatus = await nativeMap('startRemoteKeyboard');
-      if (mounted) setState(() {});
-      _pollKeyboardStatus();
-    } on PlatformException catch (e) {
-      if (mounted) setState(() => keyboardStatus = {'error': e.message ?? e.code});
-    } catch (e) {
-      if (mounted) setState(() => keyboardStatus = {'error': e.toString()});
-    } finally {
-      if (mounted) setState(() => keyboardBusy = false);
-    }
-  }
-
-  Future<void> stopPhoneKeyboard() async {
-    setState(() { keyboardBusy = true; });
-    keyboardPollTimer?.cancel();
-    try {
-      keyboardStatus = await nativeMap('stopRemoteKeyboard');
-      if (mounted) setState(() {});
-    } on PlatformException catch (e) {
-      if (mounted) setState(() => keyboardStatus = {'error': e.message ?? e.code});
-    } catch (e) {
-      if (mounted) setState(() => keyboardStatus = {'error': e.toString()});
-    } finally {
-      if (mounted) setState(() => keyboardBusy = false);
-    }
-  }
-
   void _pollImeSelection() {
     keyboardPollTimer?.cancel();
     var checks = 0;
@@ -293,11 +669,14 @@ class _TvHomeState extends State<TvHome> {
   }
 
   Future<void> chooseKeyboard() async {
+    setState(() => keyboardBusy = true);
     try {
       await native.invokeMethod<bool>('showKeyboardPicker');
       _pollImeSelection();
     } on PlatformException catch (e) {
       if (mounted) setState(() => keyboardStatus = {'error': e.message ?? e.code});
+    } finally {
+      if (mounted) setState(() => keyboardBusy = false);
     }
   }
 
@@ -582,16 +961,15 @@ class _TvHomeState extends State<TvHome> {
     final running = keyboardStatus['running'] == true;
     final enabled = keyboardStatus['keyboardEnabled'] == true;
     final selected = keyboardStatus['keyboardSelected'] == true;
-    final url = keyboardStatus['url']?.toString();
     final pin = keyboardStatus['pin']?.toString();
 
     return SingleChildScrollView(
       key: const ValueKey('keyboard'),
       padding: const EdgeInsets.fromLTRB(30, 26, 30, 30),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(t('keyboardTitle'), style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        Text(t('keyboardSubtitle'), style: Theme.of(context).textTheme.bodyLarge),
+        Text(t('keyboard'), style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        Text(t('tvPairCodeHint'), style: Theme.of(context).textTheme.bodyLarge),
         const SizedBox(height: 22),
         panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
@@ -604,64 +982,25 @@ class _TvHomeState extends State<TvHome> {
             Icon(Icons.circle, size: 11, color: running ? Colors.green : Colors.orange),
           ]),
           const SizedBox(height: 16),
-          Wrap(spacing: 12, runSpacing: 12, children: [
-            OutlinedButton.icon(
-              onPressed: keyboardBusy ? null : chooseKeyboard,
-              icon: const Icon(Icons.settings_rounded),
-              label: Text(t('chooseKeyboard')),
-            ),
-            FilledButton.icon(
-              onPressed: keyboardBusy || running ? null : startPhoneKeyboard,
-              icon: keyboardBusy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.phone_android_rounded),
-              label: Text(t('startPhoneKeyboard')),
-            ),
-            if (running)
-              OutlinedButton.icon(
-                onPressed: keyboardBusy ? null : stopPhoneKeyboard,
-                icon: const Icon(Icons.stop_circle_outlined),
-                label: Text(t('stopPhoneKeyboard')),
-              ),
-          ]),
+          OutlinedButton.icon(
+            onPressed: keyboardBusy ? null : chooseKeyboard,
+            icon: const Icon(Icons.settings_rounded),
+            label: Text(t('chooseKeyboard')),
+          ),
           if (keyboardStatus['error'] != null) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             errorPanel(keyboardStatus['error'].toString()),
           ],
-          if (running && (url == null || url.isEmpty)) ...[
-            const SizedBox(height: 16),
-            Text(t('keyboardNoAddress'), style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-          if (url != null && url.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            Divider(color: Theme.of(context).dividerColor),
-            const SizedBox(height: 12),
-            Text(t('phoneAddress'), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            SelectableText(url, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w800)),
-          ],
           if (pin != null && pin.isNotEmpty) ...[
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             Text(t('pairingCode'), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 6),
-            SelectableText(pin, style: Theme.of(context).textTheme.headlineMedium?.copyWith(letterSpacing: 8, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            SelectableText(pin, style: Theme.of(context).textTheme.headlineLarge?.copyWith(letterSpacing: 9, fontWeight: FontWeight.w900)),
           ],
           const SizedBox(height: 18),
-          Text(t('keyboardHint'), style: Theme.of(context).textTheme.bodyMedium),
-          if (!selected) ...[
-            const SizedBox(height: 10),
-            Text(t('keyboardNotConnected'), style: TextStyle(color: Theme.of(context).colorScheme.secondary)),
-          ],
-          if (keyboardStatus['starting'] == true) ...[
-            const SizedBox(height: 8),
-            Text(t('keyboardStarting'), style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (running) ...[
-            const SizedBox(height: 8),
-            Text(t('keyboardRunning'), style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (!running && pin == null) ...[
-            const SizedBox(height: 8),
-            Text(t('keyboardNotRunning'), style: Theme.of(context).textTheme.bodySmall),
-          ],
+          Text(t('keyboardSetupTv'), style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 8),
+          Text(running ? t('keyboardRunning') : t('keyboardStarting'), style: Theme.of(context).textTheme.bodySmall),
         ])),
       ]),
     );

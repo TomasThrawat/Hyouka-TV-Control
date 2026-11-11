@@ -31,6 +31,8 @@ manifest_text = manifest.read_text(encoding="utf-8")
 for permission in [
     '<uses-permission android:name="android.permission.INTERNET" />',
     '<uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />',
+    '<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />',
+    '<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />',
     '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
     '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />',
 ]:
@@ -39,6 +41,12 @@ for permission in [
         application_index = manifest_text.find("<application")
         manifest_text = manifest_text[:application_index] + permission + "\n" + manifest_text[application_index:]
 manifest_text = re.sub(r'android:label="[^"]+"', 'android:label="Hyouka TV Control"', manifest_text, count=1)
+if "android:usesCleartextTraffic=" not in manifest_text:
+    manifest_text = manifest_text.replace(
+        "<application",
+        '<application android:usesCleartextTraffic="true"',
+        1,
+    )
 if "moe.shizuku.manager.permission.API_V23" not in manifest_text:
     manifest_text = manifest_text.replace(
         "<application",
