@@ -15,6 +15,23 @@ const words = <String, Map<String, String>>{
   'home': {'en':'Controls','ar':'التحكم'},
   'settings': {'en':'Settings','ar':'الإعدادات'},
   'device': {'en':'TV status','ar':'حالة التلفزيون'},
+  'keyboard': {'en':'Phone keyboard','ar':'كيبورد الموبايل'},
+  'keyboardTitle': {'en':'Type on your TV from your phone','ar':'اكتب على التلفزيون من موبايلك'},
+  'keyboardSubtitle': {'en':'Pair your phone with this TV, then use your phone keyboard to send text to the focused field.','ar':'اربط موبايلك بالتلفزيون واكتب من كيبورد الموبايل في خانة الكتابة المفتوحة على التلفزيون.'},
+  'chooseKeyboard': {'en':'Choose Hyouka keyboard','ar':'اختيار كيبورد Hyouka'},
+  'keyboardEnableHint': {'en':'Select Hyouka Remote Keyboard in the system keyboard picker.','ar':'اختار Hyouka Remote Keyboard من قائمة لوحات المفاتيح.'},
+  'keyboardPickHint': {'en':'Choose Hyouka Remote Keyboard in the picker to receive text.','ar':'اختار Hyouka Remote Keyboard من القائمة لاستقبال النص.'},
+  'keyboardSelected': {'en':'Hyouka Remote Keyboard is selected.','ar':'كيبورد Hyouka هو لوحة المفاتيح المختارة.'},
+  'startPhoneKeyboard': {'en':'Start phone keyboard','ar':'تشغيل كيبورد الموبايل'},
+  'stopPhoneKeyboard': {'en':'Stop sharing','ar':'إيقاف المشاركة'},
+  'phoneAddress': {'en':'Open this address on your phone','ar':'افتح العنوان ده على موبايلك'},
+  'pairingCode': {'en':'Pairing code','ar':'رمز الاقتران'},
+  'keyboardHint': {'en':'Keep a text field focused on the TV. Open the address on your phone, enter the code, type, then tap Send. Both devices must be on the same Wi-Fi network.','ar':'سيب خانة الكتابة مفتوحة ومحددة على التلفزيون. افتح العنوان من موبايلك، واكتب رمز الاقتران، وبعدها اكتب واضغط إرسال. لازم الجهازين يكونوا على نفس شبكة Wi-Fi.'},
+  'keyboardStarting': {'en':'Starting the local keyboard server…','ar':'جاري تشغيل خادم الكيبورد المحلي…'},
+  'keyboardRunning': {'en':'Waiting for your phone…','ar':'في انتظار اتصال الموبايل…'},
+  'keyboardNotRunning': {'en':'Phone keyboard is stopped.','ar':'كيبورد الموبايل متوقف.'},
+  'keyboardNoAddress': {'en':'No local network address found. Connect the TV to Wi-Fi or Ethernet.','ar':'مش لاقي عنوان شبكة محلية. وصّل التلفزيون بالـ Wi-Fi أو Ethernet.'},
+  'keyboardNotConnected': {'en':'The TV input method is not active. Select Hyouka Remote Keyboard first.','ar':'لوحة إدخال Hyouka مش نشطة. اختارها الأول من قائمة لوحات المفاتيح.'},
   'welcome': {'en':'Your TV, your way','ar':'تحكّم في تلفزيونك بطريقتك'},
   'subtitle': {'en':'Quick system controls for your living room.','ar':'تحكم سريع في إعدادات التلفزيون.'},
   'connected': {'en':'Shizuku connected','ar':'Shizuku متصل'},
@@ -164,6 +181,9 @@ class _TvHomeState extends State<TvHome> {
   Map<String, dynamic> dashboard = {};
   String? error;
   Timer? brightnessTimer, mediaTimer, systemTimer, alarmTimer;
+  Map<String, dynamic> keyboardStatus = {};
+  bool keyboardBusy = false;
+  Timer? keyboardPollTimer;
 
   String t(String key) => tr(key, widget.language);
   bool get permitted => status['permissionGranted'] == true;
@@ -179,7 +199,7 @@ class _TvHomeState extends State<TvHome> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => refresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) { refresh(); refreshKeyboardStatus(); });
   }
 
   @override
@@ -188,7 +208,97 @@ class _TvHomeState extends State<TvHome> {
     mediaTimer?.cancel();
     systemTimer?.cancel();
     alarmTimer?.cancel();
+    keyboardPollTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> refreshKeyboardStatus() async {
+    try {
+      final next = await nativeMap('remoteKeyboardStatus');
+      if (mounted) setState(() => keyboardStatus = next);
+    } catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.toString()});
+    }
+  }
+
+  void _pollKeyboardStatus() {
+    keyboardPollTimer?.cancel();
+    keyboardPollTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (!mounted) { timer.cancel(); return; }
+      try {
+        final next = await nativeMap('remoteKeyboardStatus');
+        if (!mounted) { timer.cancel(); return; }
+        setState(() => keyboardStatus = next);
+        if (next['running'] == true || next['error'] != null) {
+          timer.cancel();
+          keyboardPollTimer = null;
+        }
+      } catch (e) {
+        if (mounted) setState(() => keyboardStatus = {'error': e.toString()});
+        timer.cancel();
+        keyboardPollTimer = null;
+      }
+    });
+  }
+
+  Future<void> startPhoneKeyboard() async {
+    setState(() { keyboardBusy = true; });
+    try {
+      keyboardStatus = await nativeMap('startRemoteKeyboard');
+      if (mounted) setState(() {});
+      _pollKeyboardStatus();
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.message ?? e.code});
+    } catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.toString()});
+    } finally {
+      if (mounted) setState(() => keyboardBusy = false);
+    }
+  }
+
+  Future<void> stopPhoneKeyboard() async {
+    setState(() { keyboardBusy = true; });
+    keyboardPollTimer?.cancel();
+    try {
+      keyboardStatus = await nativeMap('stopRemoteKeyboard');
+      if (mounted) setState(() {});
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.message ?? e.code});
+    } catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.toString()});
+    } finally {
+      if (mounted) setState(() => keyboardBusy = false);
+    }
+  }
+
+  void _pollImeSelection() {
+    keyboardPollTimer?.cancel();
+    var checks = 0;
+    keyboardPollTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      checks += 1;
+      if (!mounted) { timer.cancel(); return; }
+      try {
+        final next = await nativeMap('remoteKeyboardStatus');
+        if (!mounted) { timer.cancel(); return; }
+        setState(() => keyboardStatus = next);
+        if (next['keyboardSelected'] == true || checks >= 15) {
+          timer.cancel();
+          keyboardPollTimer = null;
+        }
+      } catch (_) {
+        timer.cancel();
+        keyboardPollTimer = null;
+      }
+    });
+  }
+
+  Future<void> chooseKeyboard() async {
+    try {
+      await native.invokeMethod<bool>('showKeyboardPicker');
+      _pollImeSelection();
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => keyboardStatus = {'error': e.message ?? e.code});
+    }
   }
 
   Future<void> refresh() async {
@@ -287,15 +397,16 @@ class _TvHomeState extends State<TvHome> {
             ),
             const SizedBox(height: 18),
             nav(0, Icons.tune_rounded, t('home')),
-            nav(1, Icons.settings_rounded, t('settings')),
-            nav(2, Icons.info_outline_rounded, t('device')),
+            nav(1, Icons.keyboard_rounded, t('keyboard')),
+            nav(2, Icons.settings_rounded, t('settings')),
+            nav(3, Icons.info_outline_rounded, t('device')),
             const Spacer(),
             Padding(padding: const EdgeInsets.all(12), child: Text(t('help'), textAlign: TextAlign.center, style: theme.textTheme.bodySmall)),
           ]),
         ),
         Expanded(child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 160),
-          child: page == 0 ? controls() : page == 1 ? settingsPage() : devicePage(),
+          child: page == 0 ? controls() : page == 1 ? keyboardPage() : page == 2 ? settingsPage() : devicePage(),
         )),
       ])),
     );
@@ -307,7 +418,7 @@ class _TvHomeState extends State<TvHome> {
       width: double.infinity, height: 58,
       child: FilledButton.tonalIcon(
         autofocus: index == 0,
-        onPressed: () => setState(() => page = index),
+        onPressed: () { setState(() => page = index); if (index == 1) refreshKeyboardStatus(); },
         icon: Icon(icon), label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
         style: FilledButton.styleFrom(
           backgroundColor: page == index ? Theme.of(context).colorScheme.primaryContainer : Colors.transparent,
@@ -465,6 +576,95 @@ class _TvHomeState extends State<TvHome> {
         onChanged: busy ? null : (v) { if (v != null) setTimeout(v); },
       ),
     ]));
+  }
+
+  Widget keyboardPage() {
+    final running = keyboardStatus['running'] == true;
+    final enabled = keyboardStatus['keyboardEnabled'] == true;
+    final selected = keyboardStatus['keyboardSelected'] == true;
+    final url = keyboardStatus['url']?.toString();
+    final pin = keyboardStatus['pin']?.toString();
+
+    return SingleChildScrollView(
+      key: const ValueKey('keyboard'),
+      padding: const EdgeInsets.fromLTRB(30, 26, 30, 30),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(t('keyboardTitle'), style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        Text(t('keyboardSubtitle'), style: Theme.of(context).textTheme.bodyLarge),
+        const SizedBox(height: 22),
+        panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.keyboard_rounded, size: 30, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(child: Text(
+              selected ? t('keyboardSelected') : (enabled ? t('keyboardPickHint') : t('keyboardEnableHint')),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            )),
+            Icon(Icons.circle, size: 11, color: running ? Colors.green : Colors.orange),
+          ]),
+          const SizedBox(height: 16),
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            OutlinedButton.icon(
+              onPressed: keyboardBusy ? null : chooseKeyboard,
+              icon: const Icon(Icons.settings_rounded),
+              label: Text(t('chooseKeyboard')),
+            ),
+            FilledButton.icon(
+              onPressed: keyboardBusy || running ? null : startPhoneKeyboard,
+              icon: keyboardBusy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.phone_android_rounded),
+              label: Text(t('startPhoneKeyboard')),
+            ),
+            if (running)
+              OutlinedButton.icon(
+                onPressed: keyboardBusy ? null : stopPhoneKeyboard,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: Text(t('stopPhoneKeyboard')),
+              ),
+          ]),
+          if (keyboardStatus['error'] != null) ...[
+            const SizedBox(height: 14),
+            errorPanel(keyboardStatus['error'].toString()),
+          ],
+          if (running && (url == null || url.isEmpty)) ...[
+            const SizedBox(height: 16),
+            Text(t('keyboardNoAddress'), style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          if (url != null && url.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Divider(color: Theme.of(context).dividerColor),
+            const SizedBox(height: 12),
+            Text(t('phoneAddress'), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            SelectableText(url, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w800)),
+          ],
+          if (pin != null && pin.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Text(t('pairingCode'), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            SelectableText(pin, style: Theme.of(context).textTheme.headlineMedium?.copyWith(letterSpacing: 8, fontWeight: FontWeight.w900)),
+          ],
+          const SizedBox(height: 18),
+          Text(t('keyboardHint'), style: Theme.of(context).textTheme.bodyMedium),
+          if (!selected) ...[
+            const SizedBox(height: 10),
+            Text(t('keyboardNotConnected'), style: TextStyle(color: Theme.of(context).colorScheme.secondary)),
+          ],
+          if (keyboardStatus['starting'] == true) ...[
+            const SizedBox(height: 8),
+            Text(t('keyboardStarting'), style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (running) ...[
+            const SizedBox(height: 8),
+            Text(t('keyboardRunning'), style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (!running && pin == null) ...[
+            const SizedBox(height: 8),
+            Text(t('keyboardNotRunning'), style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ])),
+      ]),
+    );
   }
 
   Widget settingsPage() {

@@ -28,6 +28,16 @@ if "buildFeatures {" not in text:
 gradle_path.write_text(text, encoding="utf-8")
 
 manifest_text = manifest.read_text(encoding="utf-8")
+for permission in [
+    '<uses-permission android:name="android.permission.INTERNET" />',
+    '<uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />',
+    '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
+    '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />',
+]:
+    permission_name = re.search(r'android:name="([^"]+)"', permission).group(1)
+    if permission_name not in manifest_text:
+        application_index = manifest_text.find("<application")
+        manifest_text = manifest_text[:application_index] + permission + "\n" + manifest_text[application_index:]
 manifest_text = re.sub(r'android:label="[^"]+"', 'android:label="Hyouka TV Control"', manifest_text, count=1)
 if "moe.shizuku.manager.permission.API_V23" not in manifest_text:
     manifest_text = manifest_text.replace(
@@ -51,6 +61,27 @@ if "rikka.shizuku.ShizukuProvider" not in manifest_text:
     )
     index = manifest_text.find(">", manifest_text.find("<application"))
     manifest_text = manifest_text[:index + 1] + provider + manifest_text[index + 1:]
+services = """
+        <service
+            android:name=".RemoteKeyboardServerService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+        <service
+            android:name=".HyoukaInputMethod"
+            android:label="@string/hyouka_remote_keyboard"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/hyouka_input_method" />
+        </service>
+"""
+if ".RemoteKeyboardServerService" not in manifest_text:
+    manifest_text = manifest_text.replace("</application>", services + "\n    </application>", 1)
+
 launcher = '<category android:name="android.intent.category.LAUNCHER" />'
 if "android.intent.category.LEANBACK_LAUNCHER" not in manifest_text:
     manifest_text = manifest_text.replace(launcher, launcher + '\n                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />', 1)
@@ -65,10 +96,22 @@ for source, destination in [
     ("android_src/ITvControlService.aidl", aidl / "ITvControlService.aidl"),
     ("android_src/TvControlUserService.kt", kotlin / "TvControlUserService.kt"),
     ("android_src/MainActivity.kt", kotlin / "MainActivity.kt"),
+    ("android_src/RemoteKeyboardServerService.kt", kotlin / "RemoteKeyboardServerService.kt"),
+    ("android_src/HyoukaInputMethod.kt", kotlin / "HyoukaInputMethod.kt"),
 ]:
     destination.write_text((ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
 
 res = base / "res"
+(res / "xml").mkdir(parents=True, exist_ok=True)
+(res / "values").mkdir(parents=True, exist_ok=True)
+(res / "xml/hyouka_input_method.xml").write_text(
+    (ROOT / "android_src/hyouka_input_method.xml").read_text(encoding="utf-8"),
+    encoding="utf-8",
+)
+(res / "values/hyouka_strings.xml").write_text(
+    (ROOT / "android_src/hyouka_strings.xml").read_text(encoding="utf-8"),
+    encoding="utf-8",
+)
 (res / "drawable").mkdir(parents=True, exist_ok=True)
 (res / "mipmap-anydpi-v26").mkdir(parents=True, exist_ok=True)
 (res / "values").mkdir(parents=True, exist_ok=True)

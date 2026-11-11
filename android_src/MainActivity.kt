@@ -10,6 +10,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.IBinder
 import android.provider.Settings
+import android.view.inputmethod.InputMethodManager
+import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -96,6 +98,26 @@ class MainActivity : FlutterActivity() {
     private fun handleCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "checkStatus" -> result.success(statusSnapshot())
+            "startRemoteKeyboard" -> {
+                try {
+                    RemoteKeyboardServerService.prepareSession()
+                    val intent = Intent(this, RemoteKeyboardServerService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+                    result.success(remoteKeyboardStatus())
+                } catch (error: Exception) {
+                    result.error("REMOTE_KEYBOARD_START_FAILED", error.message ?: error.javaClass.simpleName, null)
+                }
+            }
+            "stopRemoteKeyboard" -> {
+                RemoteKeyboardServerService.clearSession()
+                stopService(Intent(this, RemoteKeyboardServerService::class.java))
+                result.success(remoteKeyboardStatus())
+            }
+            "remoteKeyboardStatus" -> result.success(remoteKeyboardStatus())
+            "showKeyboardPicker" -> {
+                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+                result.success(true)
+            }
             "requestShizukuPermission" -> requestShizukuPermission(result)
             "readDashboard" -> callWithService(result) { service ->
                 mapOf(
@@ -149,6 +171,20 @@ class MainActivity : FlutterActivity() {
             }
             else -> result.notImplemented()
         }
+    }
+
+    private fun remoteKeyboardStatus(): Map<String, Any?> {
+        val component = ComponentName(this, HyoukaInputMethod::class.java)
+        val inputMethods = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        val enabled = inputMethods.enabledInputMethodList.any {
+            it.packageName == packageName && it.serviceName == HyoukaInputMethod::class.java.name
+        }
+        val selectedId = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        val selected = selectedId == component.flattenToString() || selectedId == component.flattenToShortString()
+        return RemoteKeyboardServerService.statusSnapshot() + mapOf(
+            "keyboardEnabled" to enabled,
+            "keyboardSelected" to selected
+        )
     }
 
     private fun requestShizukuPermission(result: MethodChannel.Result) {

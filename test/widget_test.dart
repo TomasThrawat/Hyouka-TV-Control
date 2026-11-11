@@ -6,6 +6,7 @@ void main() {
     await tester.pumpWidget(const HyoukaTvControlApp());
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('Hyouka TV Control'), findsWidgets);
+    expect(find.text('Phone keyboard'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
