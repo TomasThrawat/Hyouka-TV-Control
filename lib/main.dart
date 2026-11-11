@@ -285,7 +285,7 @@ class _PhoneRemoteHomeState extends State<PhoneRemoteHome> {
       });
       if (!mounted) return;
       setState(() { busy = false; });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('pairedWith') + ' ' + (paired['name']?.toString() ?? t('app')))));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("\u0024{t('pairedWith')} \u0024{paired['name']?.toString() ?? t('app')}")));
     } on PlatformException catch (e) {
       if (mounted) setState(() { busy = false; error = e.message ?? e.code; });
     } catch (e) {
@@ -916,10 +916,10 @@ class _TvHomeState extends State<TvHome> {
       const SizedBox(height: 10),
       Row(children: [
         const Icon(Icons.remove_rounded, size: 18),
-        Expanded(child: Slider(value: value.clamp(0, 100).toDouble(), min: 0, max: 100, divisions: 100, label: value.toString() + '%', onChanged: (v) => changed(v.round()))),
+        Expanded(child: Slider(value: value.clamp(0, 100).toDouble(), min: 0, max: 100, divisions: 100, label: '\u0024value%', onChanged: (v) => changed(v.round()))),
         const Icon(Icons.add_rounded, size: 18),
       ]),
-      Align(alignment: AlignmentDirectional.centerEnd, child: Text(value.toString() + '%')),
+      Align(alignment: AlignmentDirectional.centerEnd, child: Text('\u0024value%')),
     ],
   ));
 
@@ -1116,7 +1116,7 @@ class _TvHomeState extends State<TvHome> {
     child: Row(children: [
       Icon(Icons.error_outline_rounded, color: Theme.of(context).colorScheme.error),
       const SizedBox(width: 10),
-      Expanded(child: Text(t('failed') + ': ' + message)),
+      Expanded(child: Text("\u0024{t('failed')}: \u0024message")),
       TextButton(onPressed: refresh, child: Text(t('retry'))),
     ]),
   );
