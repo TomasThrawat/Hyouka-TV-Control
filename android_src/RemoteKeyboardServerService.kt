@@ -128,7 +128,7 @@ class RemoteKeyboardServerService : Service() {
             serviceName = SERVICE_NAME
             serviceType = SERVICE_TYPE
             this.port = port
-            setAttribute("id", deviceId().toByteArray(StandardCharsets.UTF_8))
+            setAttribute("id", deviceId())
         }
         val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
