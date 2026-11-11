@@ -75,6 +75,7 @@ const words = <String, Map<String, String>>{
   'timeoutHint': {'en':'May be limited by TV firmware','ar':'قد يقيّد النظام هذا الإعداد'},
   'one': {'en':'1 minute','ar':'دقيقة'},
   'five': {'en':'5 minutes','ar':'5 دقائق'},
+  'ten': {'en':'10 minutes','ar':'10 دقائق'},
   'fifteen': {'en':'15 minutes','ar':'15 دقيقة'},
   'thirty': {'en':'30 minutes','ar':'30 دقيقة'},
   'sixty': {'en':'60 minutes','ar':'60 دقيقة'},
@@ -939,8 +940,8 @@ class _TvHomeState extends State<TvHome> {
   );
 
   Widget timeoutPanel() {
-    const values = <int>[60000, 300000, 900000, 1800000, 3600000];
-    const keys = <String>['one', 'five', 'fifteen', 'thirty', 'sixty'];
+    const values = <int>[60000, 300000, 600000, 900000, 1800000, 3600000];
+    const keys = <String>['one', 'five', 'ten', 'fifteen', 'thirty', 'sixty'];
     final selected = values.contains(timeoutMs) ? timeoutMs : 600000;
     return panel(Row(children: [
       const Icon(Icons.timer_outlined, size: 30), const SizedBox(width: 12),

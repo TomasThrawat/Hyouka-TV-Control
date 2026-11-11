@@ -90,7 +90,7 @@ void main() {
     expect(find.text('Keyboard'), findsOneWidget);
     await tester.tap(find.text('Keyboard'));
     await tester.pumpAndSettle();
-    expect(find.text('Type on TV'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).last, 'مرحبا');
     await tester.pump(const Duration(milliseconds: 100));
